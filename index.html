@@ -1,0 +1,124 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset=utf-8>
+    <title>许愿墙</title>
+    <link rel=stylesheet href=css/ui-block.css>
+</head>
+<body>
+    <img src="wish4.jpg" alt="wish" height="200" width="60%" style="float:right;" />
+
+    <div class=select-wallet-file></div>
+    <br/>
+    <textarea>如何许愿：1.绑定自己的Nebulas钱包；2.输入自己的愿望；3.点击许愿，再点击刷新，几秒钟后，你的愿望就会显示在许愿墙上。注意：本App是免费App，仅收取极少量的转账费用；每个账号只可以许一个愿望，第二许愿会覆盖前一次许的愿望。</textarea>
+    <h3>大家的愿望：</h3>
+    <div id=message_history></div>
+
+
+    <textarea id=my_message></textarea>
+    <button id=post_message disabled onclick="javascript:onClickPostMessage()">Post message</button>
+    <button id=refresh onclick="javascript:onClickRefresh()">Refresh</button>
+
+
+    <script src=lib/jquery-3.3.1.min.js></script>
+    <script src=lib/nebulas.js></script>
+    <script src=js/1-localSave.js></script>
+    <script src=js/i18n.js data-depends=jquery.slim></script>
+    <script src=js/ui-block.js data-depends="bootbox blockies jquery.slim i18n.js nebulas.js"></script>
+
+
+    <script>
+        "use strict";
+
+
+        var contract_address = "n1stSbmSJfkLX9ZRjPJKJa9m9242yj1XVgW";
+        var user_account = null;
+
+        var is_mainnet = true;
+        var nebulas_chain_id, nebulas_domain;
+        var gas_price = 1000000;
+        var gas_limit = 200000;
+
+        if(is_mainnet) {
+            nebulas_chain_id = 1;
+            nebulas_domain = "https://mainnet.nebulas.io";
+        } else {
+            nebulas_chain_id = 1001;
+            nebulas_domain = "https://testnet.nebulas.io";
+        }
+
+
+        var nebulas = require("nebulas");
+        var neb = new nebulas.Neb();
+        neb.setRequest(new nebulas.HttpRequest(nebulas_domain));
+
+        uiBlock.insert({
+            selectWalletFile: [".select-wallet-file", onUnlockFile]
+        });
+
+        function onClickRefresh() {
+            neb.api.call({
+                from: contract_address,
+                to: contract_address,
+                value: 0,
+                nonce: 0,
+                gasPrice: gas_price,
+                gasLimit: gas_limit,
+                contract: {function: "getMessages"}
+            }).then(function (resp) {
+                $("#message_history").empty();
+
+                var messages = JSON.parse(resp.result);
+                for(var i = 0; i < messages.length; i++) {
+                    var $span = $("<span></span>").text(messages[i]);
+                    $("#message_history").append($span);
+                    $("#message_history").append("<br><hr>");
+                }
+            });
+
+            if(user_account) {
+                neb.api.call({
+                    from: user_account.getAddressString(),
+                    to: contract_address,
+                    value: 0,
+                    nonce: 0,
+                    gasPrice: gas_price,
+                    gasLimit: gas_limit,
+                    contract: {function: "getMyMessage"}
+                }).then(function (resp) {
+                    var message = JSON.parse(resp.result);
+                    $("#my_message").val(message);
+                });
+            }
+        }
+
+        function onClickPostMessage() {
+            neb.api.getAccountState(user_account.getAddressString())
+            .then(function (resp) {
+                var nonce = parseInt(resp.nonce) + 1;
+                var gTx = new nebulas.Transaction(
+                    nebulas_chain_id,
+                    user_account,
+                    contract_address,
+                    0,
+                    nonce,
+                    gas_price,
+                    gas_limit,
+                    {function: "postMessage", args: JSON.stringify([$("#my_message").val()])});
+
+                gTx.signTransaction();
+                neb.api.sendRawTransaction(gTx.toProtoString());
+            });
+        }
+
+        function onUnlockFile(swf, fileJson, account, password) {
+            account.fromKey(fileJson, password);
+            user_account = account;
+
+            $("#post_message").attr("disabled", false);
+        }
+
+        onClickRefresh();
+    </script>
+</body>
+</html>
